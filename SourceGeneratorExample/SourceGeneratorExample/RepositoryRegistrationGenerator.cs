@@ -28,7 +28,9 @@ public class RepositoryRegistrationGenerator : IIncrementalGenerator
         );
     }
 
-    private static IncrementalValuesProvider<ClassDeclarationSyntax> CollectClasses(IncrementalGeneratorInitializationContext context)
+    private static IncrementalValuesProvider<ClassDeclarationSyntax> CollectClasses (
+        IncrementalGeneratorInitializationContext context
+    )
     {
         IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations = context
             .SyntaxProvider
@@ -46,7 +48,8 @@ public class RepositoryRegistrationGenerator : IIncrementalGenerator
 
     private static IncrementalValueProvider<ImmutableArray<RepositoryToRegister?>> FilterRepositories(
         IncrementalGeneratorInitializationContext context,
-        IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations)
+        IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations
+    )
     {
         IncrementalValuesProvider<RepositoryToRegister?> repositoryClasses = classDeclarations
             .Combine(context.CompilationProvider)
@@ -84,7 +87,8 @@ public class RepositoryRegistrationGenerator : IIncrementalGenerator
         return repositories;
     }
 
-    private static void GenerateServicesRegistration(SourceProductionContext spc,
+    private static void GenerateServicesRegistration(
+        SourceProductionContext spc,
         ImmutableArray<RepositoryToRegister?> source
     )
     {
