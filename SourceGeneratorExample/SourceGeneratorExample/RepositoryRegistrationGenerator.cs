@@ -1,0 +1,138 @@
+using System.Collections.Immutable;
+using System.Linq;
+using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+using SourceGeneratorExample.Models;
+
+namespace SourceGeneratorExample;
+
+[Generator]
+public class RepositoryRegistrationGenerator : IIncrementalGenerator
+{
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        context.GenerateModelMarker();
+        
+        IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations = CollectClasses(context)
+            .WithTrackingName("CheckClassDeclarations");
+        IncrementalValueProvider<ImmutableArray<RepositoryToRegister?>> repositoryClasses = 
+            FilterRepositories(context, classDeclarations)
+                .WithTrackingName("CheckValidClasses");
+        
+        context.RegisterSourceOutput(
+            repositoryClasses, 
+            GenerateServicesRegistration
+        );
+    }
+
+    private static IncrementalValuesProvider<ClassDeclarationSyntax> CollectClasses(IncrementalGeneratorInitializationContext context)
+    {
+        IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations = context
+            .SyntaxProvider
+            .CreateSyntaxProvider(
+                predicate: static (node, _) => 
+                    node is ClassDeclarationSyntax { BaseList: not null } @class
+                    && @class
+                        .Modifiers
+                        .All(m => !m.IsKind(SyntaxKind.AbstractKeyword)),
+                transform: static (ctx, _) => ctx.Node as ClassDeclarationSyntax
+            )
+            .Where(static @class => @class is not null)!;
+        return classDeclarations;
+    }
+
+    private static IncrementalValueProvider<ImmutableArray<RepositoryToRegister?>> FilterRepositories(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations)
+    {
+        IncrementalValuesProvider<RepositoryToRegister?> repositoryClasses = classDeclarations
+            .Combine(context.CompilationProvider)
+            .Select<(ClassDeclarationSyntax, Compilation), RepositoryToRegister?>((data, cancellationToken) =>
+            {
+                (ClassDeclarationSyntax classDeclaration, Compilation compilation) = data;
+                SemanticModel semanticModel = compilation
+                    .GetSemanticModel(classDeclaration.SyntaxTree);
+                INamedTypeSymbol? classSymbol = semanticModel
+                    .GetDeclaredSymbol(classDeclaration, cancellationToken);
+                
+                if(classSymbol is null) return null;
+                
+                bool implementsRepository = classSymbol
+                    .AllInterfaces
+                    .Any(i => 
+                        i.ToDisplayString() == RepositoryMarker.MarkerFullyQualifiedName
+                    );
+                
+                if (!implementsRepository) return null;
+                
+                return new RepositoryToRegister(
+                    @namespace: classSymbol
+                        .ContainingNamespace
+                        .ToDisplayString(), 
+                    className: classSymbol.Name,
+                    assemblyName: compilation.AssemblyName ?? string.Empty
+                );
+            });
+        
+        IncrementalValueProvider<ImmutableArray<RepositoryToRegister?>> repositories = 
+            repositoryClasses
+                .Where(static data => data is not null)
+                .Collect();
+        return repositories;
+    }
+
+    private static void GenerateServicesRegistration(SourceProductionContext spc,
+        ImmutableArray<RepositoryToRegister?> source
+    )
+    {
+        if (source.IsDefaultOrEmpty)
+            return;
+
+        // Obtener un nombre único para la clase de extensión basado en el nombre del ensamblado.
+        string assemblyName = source.First()!.Value.AssemblyName.Replace(".", "_");
+
+        const string usingDirectives = """
+
+                                       using Microsoft.Extensions.DependencyInjection;
+
+                                       """;
+
+        var registrationCalls = new StringBuilder();
+        foreach (RepositoryToRegister repo in source
+                     .Where(r => r.HasValue)
+                     .Select(r => r!.Value))
+        {
+            registrationCalls.AppendLine(
+                $"\t\t\tservices.AddScoped<global::{repo.Namespace}.{repo.ClassName}>();");
+        }
+
+        /*
+         Este generador no está pensado para  ser  una  solución  completa,
+         pero únicamente un ejemplo.  Si  se  usa una interfaz  especializada
+         que extienda de IRepository, se deben aplicar los cambios requeridos
+         */
+        var sourceCode = $$"""
+                           // <auto-generated/>
+                           #nullable enable
+                           {{usingDirectives}}
+                           namespace MyApplication.Extensions
+                           {
+                               public static class {{assemblyName}}ServiceCollectionExtensions
+                               {
+                                   public static IServiceCollection AddRepositoriesFrom{{assemblyName}}(this IServiceCollection services)
+                                   {
+                           {{registrationCalls}}
+                                       return services;
+                                   }
+                               }
+                           }
+                           """;
+
+        spc.AddSource($"{assemblyName}RepositoryRegistrations.g.cs",
+            SourceText.From(sourceCode, Encoding.UTF8)
+        );
+    }
+}
