@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <IsPackable>false</IsPackable>
+        <IsPackable>true</IsPackable>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
 
@@ -11,6 +11,16 @@
 
         <RootNamespace>SourceGeneratorExample</RootNamespace>
         <PackageId>SourceGeneratorExample</PackageId>
+        
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <Authors>Pablo Gabriel Mederos (La Cueva del Insecto)</Authors>
+        <RepositoryUrl>https://github.com/pablomederos/SourceGeneratorsExample.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>Readme.md</PackageReadmeFile>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+        <NoWarn>$(NoWarn);NU5128</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
@@ -22,5 +32,13 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0"/>
     </ItemGroup>
 
-
+    <ItemGroup>
+        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true"
+              PackagePath="analyzers/dotnet/cs" Visible="false" />
+        
+        <None Include="$(SolutionDir)Readme.md" 
+              Pack="true"
+            PackagePath="\"/>
+    </ItemGroup>
+    
 </Project>
